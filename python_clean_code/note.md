@@ -929,3 +929,87 @@ def process_students_list(students):
   * If the interface of parent changes, then the child must account for it
 * We are applying code reuse with inheritence since we get parents methods for free, but the proper way to do this is to have `highly cohesive objects which can be easily composed and work in multiple contexts` 
 > BP: When creating a new subclass, consider consider if its going to use all the methods it just inherited
+### When inheritence is a good idea
+  * If our subclass uses very few method from the parent (i.e. it overrides all of them or just doesn't need them, may be a sign our definitions aren't correct)
+    * Occurs when superclass contains too much responsibility rather than well-defined interface
+    * Subclass isn't a proper `is a` relationship to the super class
+  * Good use is when the parent class defines a `base interface` which children do not change, but rather they extend to add functionality
+    * This is nice since it doesn't overcomplicate users who just need base interface, but allows for the extension pretty easily (i.e. perhaps an `OrientDBLoader` could inherit from `OrientDBAccessor`, but the interfaces may not lineup, just something to think about)
+  * Another good use is interface definition, where the parent is just an abstract base class defining the contract that subclasses will implement
+  * Additionally, with `Exceptions` its always a good idea to inherit since the `custom exceptions` are specializations of the base `Exception` (TODO: Need to find what the standard library exceptions are to better extend from them)
+  > BP: Correct use of inheritence would be to specialize objects and create more detailed abstractions starting from the base abstraction (similarly to Exceptions)
+### Anti-patterns of inheritence
+  * Need to consider that the parents entire public interface gets inherited by children, and therefore if we do something like inherit from `collections.UserDict`, we are getting a ton of functionality we don't need
+    * We would have been better of composing a dictionary within our object and only exposing the functionality we need
+```python
+class TransactionalPolicy(collections.UserDict):
+    """Example of an incorrect use of inheritance."""
+    def change_in_policy(self, customer_id, **new_policy_data):
+        self[customer_id].update(**new_policy_data)
+
+>>> policy = TransactionalPolicy({
+...     "client001": { 
+...         "fee": 1000.0, 
+...         "expiration_date": datetime(2020, 1, 3), 
+...     } 
+... }) 
+>>> policy["client001"]
+{'fee': 1000.0, 'expiration_date': datetime.datetime(2020, 1, 3, 0, 0)}
+>>> policy.change_in_policy("client001", expiration_date=datetime(2020, 1, 4))
+>>> policy["client001"]
+{'fee': 1000.0, 'expiration_date': datetime.datetime(2020, 1, 4, 0, 0)}
+
+# Notice, we have a ton of stuff we don't need since our "specialization" wasn't correct
+  # Our policy wasn't really a specialization of a dictionary, it is way more broad and doesn't use most of dict functionality
+>>> dir(policy)
+[ # all magic and special method have been omitted for brevity...
+ 'change_in_policy', 'clear', 'copy', 'data', 'fromkeys', 'get', 'items', 'keys', 'pop', 'popitem', 'setdefault', 'update', 'values']
+```
+  * Notice we have mixed an implementation object (`dict`) with a domain object (`TransactionalPolicy`), with the latter being at a far higher level of abstraction, but now we have brought it down to the level of abstraction of a data structure
+    * This also limits what the underlying data model is, we need to think of these objects from a higher level, without considering what is going on under the hood (or making our clients not have to think about it)
+  * Correct implementation would be to use `__getitem__()` magic method to allow for subscripting and compose the dictionary
+```python
+class TransactionalPolicy:
+    """Example refactored to use composition."""
+    def __init__(self, policy_data, **extra_data):
+        self._data = {**policy_data, **extra_data}
+    def change_in_policy(self, customer_id, **new_policy_data):
+        self._data[customer_id].update(**new_policy_data)
+    def __getitem__(self, customer_id):
+        return self._data[customer_id]
+    def __len__(self):
+        return len(self._data)
+```
+### Multiple Inheritence
+* Method Resolution Order (MRO)
+  * Algorithm called C3 linearization or MRO which defines a deterministic for methods in a class hierarchy using multiple inheritence will be called
+  * ![](img2.png "Title")
+  * In the above image, `BaseModule1` and `BaseModule2` both inherit `__str__()`, so which one does `ConcreteModuleA12` inherit from
+    * Answer is depends on order of definition (can be checked with `<ClassName>.mro()`)
+```python
+class BaseModule:
+    module_name = "top"
+    def __init__(self, module_name):
+        self.name = module_name
+    def __str__(self):
+        return f"{self.module_name}:{self.name}"
+class BaseModule1(BaseModule):
+    module_name = "module-1"
+class BaseModule2(BaseModule):
+    module_name = "module-2"
+class BaseModule3(BaseModule):
+    module_name = "module-3"
+class ConcreteModuleA12(BaseModule1, BaseModule2):
+    """Extend 1 & 2"""
+class ConcreteModuleB23(BaseModule2, BaseModule3):
+    """Extend 2 & 3"""
+
+# since it was inherited from first
+>>> str(ConcreteModuleA12("test"))
+'module-1:test'
+
+>>> [cls.__name__ for cls in ConcreteModuleA12.mro()]
+['ConcreteModuleA', 'BaseModule1', 'BaseModule2', 'BaseModule', 'object']
+```
+* `Mixins`
+  * 
